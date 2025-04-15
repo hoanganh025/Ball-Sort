@@ -68,7 +68,7 @@ namespace DefaultNamespace
             }
             
             Debug.Log(this.bottleID + " is full");
-            this.Peek().MoveDown(this);
+            //this.Peek().MoveDown(this);
             return balls.Count - 1;
         }
 

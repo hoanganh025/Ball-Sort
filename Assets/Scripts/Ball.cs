@@ -33,6 +33,18 @@ namespace DefaultNamespace
         public TMP_Text textState;
 
         private Bottle preBottle;
+
+        private Bottle _targetBottle;
+        
+        public Bottle currentBottle;
+        public Bottle targetBottle
+        {
+            get => _targetBottle;
+            set => _targetBottle = value;
+        }
+        
+        public int index;
+        
         
         private void Awake()
         {
@@ -59,302 +71,203 @@ namespace DefaultNamespace
             return this;
         }
 
-        private void ChangeState(BallState newState)
-        {
-            currentState= newState;
-        }
-
-        private void HandleMovingCompleted(BallState targetState, Action action = null)
-        {
-            currentState= targetState;
-            action?.Invoke();
-            if(_actionQueue.TryDequeue(out var result))
-                result?.Invoke();
-        }
-
         private Sequence ExecuteMoveUp(Bottle bottle)
         {
             return Sequence.Create()
                 .ChainCallback(() => currentState= BallState.Up)
                 .Chain(Tween.PositionAtSpeed(transform, transform.position, bottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
                 .OnComplete(() => currentState= BallState.Holding);
-            // .ChainCallback(() => HandleMovingCompleted(BallState.Holding));
+        }
+
+        private void ResetBottle()
+        {
+            currentBottle = targetBottle;
+            targetBottle = null;
+        }
+
+        public void HandleUpCompleted()
+        {
+            if (targetBottle != null)
+            {
+                currentState = BallState.Holding;
+                Moving();
+                return;
+            }
+
+            currentState = BallState.Holding;
+        }
+
+        public void HandleMovingCompleted()
+        {
+            // if (targetState == BallState.Holding)
+            // {
+            //     Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+            //         .OnComplete(this, ball => ball.currentState = BallState.Holding);
+            //     return;
+            // }
+            
+            if (targetBottle != null)
+            {
+                currentState = BallState.Holding;
+                MoveDown();
+                
+                ResetBottle();
+                
+                return;
+            }
+                
         }
         
-        public void MoveUp(Bottle bottle)
+        public void HandleDownCompleted()
         {
-            if (_movingSequencer.isAlive)
+            currentState = BallState.Idle;
+        }
+
+        private void MoveUpCaseUp()
+        {
+            currentState = BallState.Holding;
+            Moving();
+            currentState = BallState.Holding;
+            ResetBottle();
+        }
+
+        public void MoveUp()
+        {
+            switch (currentState)
             {
-                switch (currentState)
-                {
-                    case BallState.Idle:
-                        if (preBottle != null)
+                case BallState.Up:
+                    if (targetBottle != null )
+                    {
+                        if (targetBottle == GameManager.instance.currentBottle)
                         {
-                            _movingSequencer.Stop();
-                            _movingSequencer = Sequence.Create()
-                                .ChainCallback(() => currentState= BallState.Up)
-                                .Chain(Tween.PositionAtSpeed(transform, transform.position, preBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                                .ChainCallback(() => currentState= BallState.Holding)
-                                .ChainDelay(0.1f)
-                                .ChainCallback(() => currentState= BallState.Moving)
-                                .Chain(Tween.PositionAtSpeed(transform, preBottle.GetUpPosPosition(), bottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                                .ChainCallback(() => currentState= BallState.Holding)
-                                .ChainCallback(() => preBottle = null);
+                            Tween.StopAll(transform);
+                            Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                                .OnComplete(this, ball =>
+                                {
+                                    Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed);
+                                    currentState = BallState.Holding;
+                                    ResetBottle();
+                                });
+                            return;
                         }
-                        else
+                        Tween.StopAll(transform);
+                        Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                            .OnComplete(this, ball => ball.HandleUpCompleted());
+                        return;
+                    }
+                    
+                    return;
+                
+                case BallState.Moving:
+                    Tween.StopAll(transform);
+                    Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                        .OnComplete(() =>
                         {
-                            _movingSequencer = Sequence.Create()
-                                .ChainCallback(() => currentState= BallState.Up)
-                                .Chain(Tween.PositionAtSpeed(transform, transform.position, bottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                                .ChainCallback(() => currentState= BallState.Holding);
-                        }
-                            
-                        break;
+                            currentState = BallState.Holding;
+                            ResetBottle();
+                        });
+                    return;
+                
+                case BallState.Holding:
+                    return;
+                
+                case BallState.Idle:
+                case BallState.Down:
+                    if (targetBottle != null)
+                    {
+                        Tween.StopAll(transform);
+                        currentState = BallState.Up;
+                        Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                            .OnComplete(this, ball => ball.HandleUpCompleted());
+                        return;
+                    }
                     
-                    case BallState.Up:
-                        if (preBottle != null)
-                        {
-                            _movingSequencer.Stop();
-                            _movingSequencer = Sequence.Create()
-                                .ChainCallback(() => currentState= BallState.Up)
-                                .Chain(Tween.PositionAtSpeed(transform, transform.position, preBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                                .ChainCallback(() => currentState= BallState.Holding)
-                                .ChainDelay(0.1f)
-                                .ChainCallback(() => currentState= BallState.Moving)
-                                .Chain(Tween.PositionAtSpeed(transform, preBottle.GetUpPosPosition(), bottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                                .ChainCallback(() => currentState= BallState.Holding)
-                                .ChainCallback(() => preBottle = null);
-                        }
-                        else
-                        {
-                            _movingSequencer = Sequence.Create()
-                                .ChainCallback(() => currentState= BallState.Up)
-                                .Chain(Tween.PositionAtSpeed(transform, transform.position, preBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                                .ChainCallback(() => currentState= BallState.Holding)
-                                .ChainDelay(0.1f)
-                                .ChainCallback(() => currentState= BallState.Moving)
-                                .Chain(Tween.PositionAtSpeed(transform, preBottle.GetUpPosPosition(), bottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                                .ChainCallback(() => currentState= BallState.Holding);
-                        }
-                        
-                        break;
+                    Tween.StopAll(transform);
+                    currentState = BallState.Up;
+                    Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                        .OnComplete(this, ball => ball.HandleUpCompleted());
                     
-                    case BallState.Holding:
-                        break;
-                    
-                    case BallState.Moving:
-                        _movingSequencer.Stop();
-                        _movingSequencer = Sequence.Create()
-                            .Chain(Tween.PositionAtSpeed(transform, transform.position, bottle.GetUpPosPosition(), GameManager.instance.ballSpeed));
-                        break;
-                    
-                    case BallState.Down:
-                        _movingSequencer.Stop();
-                        _movingSequencer = ExecuteMoveUp(bottle);
-                        break;
-                }
-            }
-            else
-            {
-                Debug.LogError("Moveup when not alive sequence");
-                currentState= BallState.Up;
-                _movingSequencer = ExecuteMoveUp(bottle);
+                    return;
             }
         }
     
-        public void MoveDown(Bottle bottle)
+        public void MoveDown()
         {
-            if (_movingSequencer.isAlive)
+            switch (currentState)
             {
-                _movingSequencer.Stop();
-                _actionQueue.Clear();
-
-                _movingSequencer = Sequence.Create()
-                    .ChainCallback(() => currentState= BallState.Down)
-                    .Chain(Tween.PositionAtSpeed(transform, transform.position, bottle.NextTargetPosition(), GameManager.instance.ballSpeed))
-                    .ChainCallback(() => currentState= BallState.Idle);
+                case BallState.Idle:
+                    return;
+                case BallState.Moving:
+                    return;
+                
+                case BallState.Up:
+                case BallState.Holding:
+                    if (targetBottle != null)
+                    {
+                        Tween.StopAll(transform);
+                        currentState = BallState.Down;
+                        Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
+                            .OnComplete(this, ball => ball.HandleDownCompleted());
+                        return;
+                    }
+                    
+                    Tween.StopAll(transform);
+                    currentState = BallState.Down;
+                    Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
+                        .OnComplete(this, ball => ball.HandleDownCompleted());
+                    return;
+                
+                case BallState.Down:
+                    return;
             }
-            else
+        }
+
+        public void Moving()
+        {
+            switch (currentState)
             {
-                _movingSequencer = Sequence.Create()
-                    .ChainCallback(() => currentState= BallState.Down)
-                    .Chain(Tween.PositionAtSpeed(transform, transform.position, bottle.NextTargetPosition(), GameManager.instance.ballSpeed))
-                    .ChainCallback(() => currentState= BallState.Idle);
+                case BallState.Idle:
+                    return;
+                
+                case BallState.Up:
+                    Debug.Log("Moving case up");
+                    return;
+                
+                case BallState.Holding:
+                case BallState.Moving:
+                    Tween.StopAll(transform);
+                    currentState = BallState.Moving;
+                    Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                        .OnComplete(this, ball => ball.HandleMovingCompleted());
+                    return;
+                
+                case BallState.Down:
+                    return;
             }
         }
         
-        public void ChangeBottle(Bottle fromBottle, Bottle targetBottle, float delay, int index)
+        public void ChangeBottle(Bottle fromBottle, Bottle target, float delay, int index)
         {
             textIndex.text = index.ToString();
-            preBottle = fromBottle;
+            
+            this.currentBottle = fromBottle;
+            this.targetBottle = target;
+            this.index = index;
             
             switch (currentState)
             {
                 case BallState.Idle:
-                    if (_movingSequencer.isAlive)
-                    {
-                        Debug.LogWarning("Up alive" + this.name);
-                        _movingSequencer.Stop();
-                        _actionQueue.Clear();
-                        
-                        _movingSequencer = Sequence.Create()
-                            .ChainCallback(() => currentState= BallState.Up)
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Holding)
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,fromBottle.GetUpPosPosition(), targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Up not alive"+this.name);
-                        _movingSequencer = Sequence.Create()
-                            .ChainDelay(delay)
-                            .ChainCallback(() => currentState= BallState.Up)
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Holding)
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,fromBottle.GetUpPosPosition(), targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    
+                case BallState.Down:
+                    MoveUp();
                     break;
                 
                 case BallState.Up:
-                    // Debug.LogWarning("==============Up=============== " + this.name + " Move to "+ targetBottle + " in "+ index);
-                    
-                    if (_movingSequencer.isAlive)
-                    {
-                        Debug.LogWarning("Up alive " + this.name);
-                        
-                        _movingSequencer.Stop();
-                        _actionQueue.Clear();
-                        
-                        _movingSequencer = Sequence.Create()
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,fromBottle.GetUpPosPosition(), targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Up not alive " + this.name);
-                        
-                        _movingSequencer = Sequence.Create()
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,fromBottle.GetUpPosPosition(), targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    
                     break;
                 
                 case BallState.Holding:
-                    // Debug.LogWarning("==============Holding=============== " + this.name + " Move to "+ targetBottle + " in "+ index);
-        
-                    if (_movingSequencer.isAlive)
-                    {
-                        Debug.LogWarning("Holding alive" + this.name);
-                        _movingSequencer.Stop();
-                        _actionQueue.Clear();
-                        
-                        _movingSequencer = Sequence.Create()
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Holding)
-                            .ChainDelay(0.1f)
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,fromBottle.GetUpPosPosition(), targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Holding not alive" + this.name);
-                        _movingSequencer = Sequence.Create()
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Holding)
-                            .ChainDelay(0.1f)
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,fromBottle.GetUpPosPosition(), targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                   
-                    break;
-                
-                case BallState.Down:
-                    
-                    if (_movingSequencer.isAlive)
-                    {
-                        _movingSequencer.Stop();
-                        _actionQueue.Clear();
-                        
-                        Debug.LogWarning("Down alive" + this.name);
-                        _movingSequencer = Sequence.Create()
-                            .ChainCallback(() => currentState= BallState.Up)
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Holding)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Down not alive" + this.name);
-                        _movingSequencer = Sequence.Create()
-                            .ChainCallback(() => currentState= BallState.Up)
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Holding)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    
-                    break;
-                
                 case BallState.Moving:
-                    // Debug.LogWarning("==============Moving=============== " + this.name + " Move to "+ targetBottle + " in "+ index);
-                    
-                    if (_movingSequencer.isAlive)
-                    {
-                        Debug.LogWarning("Moving alive" + this.name);
-                        _movingSequencer.Stop();
-                        _actionQueue.Clear();
-                        
-                        _movingSequencer = Sequence.Create()
-                            // .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            // .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Moving not alive"+this.name);
-                        _movingSequencer = Sequence.Create()
-                            .Chain(Tween.PositionAtSpeed(transform,transform.position, fromBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Moving)
-                            .Chain(Tween.PositionAtSpeed(transform,fromBottle.GetUpPosPosition(), targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => currentState= BallState.Down)
-                            .Chain(Tween.PositionAtSpeed(transform,targetBottle.GetUpPosPosition(), targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed))
-                            .ChainCallback(() => HandleMovingCompleted(BallState.Idle));
-                    }
-                    
+                    Moving();
                     break;
-                
-                default:
-                    throw new ArgumentOutOfRangeException();
             }
         }
     }

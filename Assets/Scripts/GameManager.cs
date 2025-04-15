@@ -8,6 +8,7 @@ using PrimeTween;
 using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Random = UnityEngine.Random;
 
@@ -31,13 +32,14 @@ namespace Core.Manager
         public Vector3 PosInitBottle = new Vector3(-3, -2, 0);
         public GameObject Prf_Bottle;
         public List<Bottle> bottles;
+        public Bottle currentBottle;
+        public Bottle targetBottle;
         
         [Header("Ball")]
         public GameObject Prf_Ball;
         public float ballSpeed = 10f;
 
         [Header("Win Condition")] public bool isWin = false;
-        
         public static GameManager instance;
 
         private void Awake()
@@ -135,8 +137,8 @@ namespace Core.Manager
             var bottleHasBall = numBottle - 2;
             
             //Init and shuffle ball
-            var balls = BallShuffle(InitBall(bottleHasBall * 4));
-            // var balls = InitBall(bottleHasBall * 4);
+            // var balls = BallShuffle(InitBall(bottleHasBall * 4));
+            var balls = InitBall(bottleHasBall * 4);
 
             //Add ball to bottle
             var bottleIndex = 0;
@@ -147,13 +149,12 @@ namespace Core.Manager
                 if (bottles[bottleIndex].balls.Count == bottles[bottleIndex].maxBall)
                 {
                     bottleIndex++;
-                    bottles[bottleIndex].AddBall(balls[i]);
-                    //Set position for ball in bottle
-                    balls[i].transform.position = bottles[bottleIndex].GetSlotWorldPosition(bottles[bottleIndex].LastBallIndex());
-                    continue;
                 }
                 
                 bottles[bottleIndex].AddBall(balls[i]);
+                //Set ball info
+                balls[i].currentBottle = bottles[bottleIndex];
+                balls[i].index = bottles[bottleIndex].LastBallIndex();
                 //Set position for ball in bottle
                 balls[i].transform.position = bottles[bottleIndex].GetSlotWorldPosition(bottles[bottleIndex].LastBallIndex());
             }
@@ -237,7 +238,6 @@ namespace Core.Manager
                 Ball b = bottle1.PopBall();
                 int index = bottle2.AddBallReturnPos(b);
                 
-                Debug.Log("Ball "+b.name+"move to bottle "+bottle2+"with index "+index);
                 // b.Moving(bottle1, bottle2, 0.7f - (i * 0.2f), index);
                 b.ChangeBottle(bottle1, bottle2, 0.4f - (i * 0.1f), index);
             }
@@ -272,6 +272,7 @@ namespace Core.Manager
             // }
             
             //If choose first bottle
+            
             if (selectedBottleIndex == -1)
             {
                 if(bottles[bottleIndex].balls.Count == 0)
@@ -280,7 +281,8 @@ namespace Core.Manager
                 }
                 
                 selectedBottleIndex = bottleIndex;
-                bottles[bottleIndex].Peek()?.MoveUp(bottles[bottleIndex]);
+                currentBottle = bottles[selectedBottleIndex];
+                bottles[bottleIndex].Peek()?.MoveUp();
             }
             //Else choose second bottle
             else
@@ -288,7 +290,7 @@ namespace Core.Manager
                 //If second bottle == first bottle
                 if (bottleIndex == selectedBottleIndex)
                 {
-                    bottles[bottleIndex].Peek()?.MoveDown(bottles[bottleIndex]);
+                    bottles[bottleIndex].Peek()?.MoveDown();
                 }
                 //If second bottle != first bottle
                 else
@@ -298,19 +300,19 @@ namespace Core.Manager
                         //If same color but second bottle full
                         if (bottles[bottleIndex].balls.Count == 4)
                         {
-                            bottles[selectedBottleIndex].Peek().MoveDown(bottles[selectedBottleIndex]);
+                            bottles[selectedBottleIndex].Peek().MoveDown();
                         }
                         //If same color and second bottle not full
                         else
                         {
-                            Debug.LogError("Start switch ====================================================");
+                            targetBottle = bottles[bottleIndex];
                             SwitchBall(bottles[selectedBottleIndex], bottles[bottleIndex]);
                         }
                         
                     }
                     else if ((bottles[selectedBottleIndex].Peek()?.ballType != bottles[bottleIndex].Peek()?.ballType))
                     {
-                        bottles[selectedBottleIndex].Peek().MoveDown(bottles[selectedBottleIndex]);
+                        bottles[selectedBottleIndex].Peek().MoveDown();
                     }
                 }
                 
@@ -348,5 +350,10 @@ namespace Core.Manager
         //     
         //     return isWin;
         // }
+
+        public void ResetScene()
+        {
+            SceneManager.LoadScene(0);
+        }
     }
 }
