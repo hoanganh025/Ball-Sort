@@ -238,8 +238,8 @@ namespace Core.Manager
                 Ball b = bottle1.PopBall();
                 int index = bottle2.AddBallReturnPos(b);
                 
-                // b.Moving(bottle1, bottle2, 0.7f - (i * 0.2f), index);
-                b.ChangeBottle(bottle1, bottle2, 0.4f - (i * 0.1f), index);
+                b.ChangeBottle(bottle1, bottle2, 0.7f - (i * 0.2f), index);
+                // b.ChangeBottle(bottle1, bottle2, 0.4f - (i * 0.1f), index);
             }
         }
         
@@ -282,7 +282,7 @@ namespace Core.Manager
                 
                 selectedBottleIndex = bottleIndex;
                 currentBottle = bottles[selectedBottleIndex];
-                bottles[bottleIndex].Peek()?.MoveUp();
+                bottles[bottleIndex].Peek()?.MarkHolding().MoveUp();
             }
             //Else choose second bottle
             else

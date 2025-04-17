@@ -418,8 +418,10 @@ MonoBehaviour:
   PosInitBottle: {x: -3, y: -2, z: 0}
   Prf_Bottle: {fileID: 1667809017031549359, guid: 208d72326b5e7324396dca899bfb6b10, type: 3}
   bottles: []
+  currentBottle: {fileID: 0}
+  targetBottle: {fileID: 0}
   Prf_Ball: {fileID: 4643685359546015513, guid: d44d0dd2cc81c2a469aee72f7075b0b1, type: 3}
-  ballSpeed: 10
+  ballSpeed: 5
   isWin: 0
 --- !u!4 &639082438
 Transform:

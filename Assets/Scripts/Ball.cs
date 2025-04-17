@@ -10,13 +10,17 @@ using Color = System.Drawing.Color;
 
 namespace DefaultNamespace
 {
-    public enum BallState
+    [Flags]
+    public enum BallState : byte
     {
-        Idle = 0,
-        Up,
-        Holding,
-        Down,
-        Moving
+        None = 0,
+        Idle = 1,
+        Up = 1 << 1,
+        Holding = 1 << 2,
+        Down = 1 << 3,
+        Moving = 1 << 4,
+        /// <summary>Force cache this value</summary>
+        MarkHolding = 1 << 5
     }
     
     public class Ball : MonoBehaviour
@@ -25,15 +29,12 @@ namespace DefaultNamespace
         public BallState currentState;
         public SpriteRenderer spriteRenderer;
 
-        public Sequence _movingSequencer;
-        
-        private readonly Queue<Action> _actionQueue = new();
-
         public TMP_Text textIndex;
         public TMP_Text textState;
 
         private Bottle preBottle;
 
+        [SerializeField]
         private Bottle _targetBottle;
         
         public Bottle currentBottle;
@@ -44,7 +45,30 @@ namespace DefaultNamespace
         }
         
         public int index;
+
+        private Tween _movementTween;
+
+        #region ---Internal State Management---
         
+        private void SetState(BallState state)
+        {
+            var isMarkedHolding = HasState(BallState.MarkHolding);
+            currentState = state;
+            if (isMarkedHolding)
+                AddState(BallState.MarkHolding);
+        }
+
+        private void AddState(BallState state)
+        {
+            if(HasState(state)) return;
+            currentState |= state;
+        }
+
+        private void RemoveState(BallState state) => currentState &= ~state;
+
+        private bool HasState(BallState state) => currentState.HasFlag(state);
+
+        #endregion
         
         private void Awake()
         {
@@ -71,33 +95,27 @@ namespace DefaultNamespace
             return this;
         }
 
-        private Sequence ExecuteMoveUp(Bottle bottle)
-        {
-            return Sequence.Create()
-                .ChainCallback(() => currentState= BallState.Up)
-                .Chain(Tween.PositionAtSpeed(transform, transform.position, bottle.GetUpPosPosition(), GameManager.instance.ballSpeed))
-                .OnComplete(() => currentState= BallState.Holding);
-        }
-
         private void ResetBottle()
         {
             currentBottle = targetBottle;
             targetBottle = null;
         }
 
-        public void HandleUpCompleted()
+        #region ---Movement Complete Listener---
+        
+        private void HandleUpCompleted()
         {
             if (targetBottle != null)
             {
-                currentState = BallState.Holding;
+                SetState(BallState.Holding);
                 Moving();
                 return;
             }
 
-            currentState = BallState.Holding;
+            SetState(BallState.Holding);
         }
 
-        public void HandleMovingCompleted()
+        private void HandleMovingCompleted()
         {
             // if (targetState == BallState.Holding)
             // {
@@ -105,145 +123,244 @@ namespace DefaultNamespace
             //         .OnComplete(this, ball => ball.currentState = BallState.Holding);
             //     return;
             // }
-            
-            if (targetBottle != null)
+
+            if (targetBottle == null)
             {
-                currentState = BallState.Holding;
-                MoveDown();
-                
-                ResetBottle();
-                
+                Debug.Log("No target bottle");
                 return;
             }
-                
-        }
-        
-        public void HandleDownCompleted()
-        {
-            currentState = BallState.Idle;
-        }
 
-        private void MoveUpCaseUp()
-        {
-            currentState = BallState.Holding;
-            Moving();
-            currentState = BallState.Holding;
+            if (HasState(BallState.MarkHolding))
+            {
+                Debug.Log("Target bottle is has holding");
+                SetState(BallState.Holding);
+                ResetBottle();
+                return;
+            }
+            
+            // Debug.Log("Target bottle is has holding");
+            SetState(BallState.Holding);
+            MoveDown();
             ResetBottle();
         }
 
+        private void HandleDownCompleted() => SetState(BallState.Idle);
+
+        #endregion
+        
+        #region ---Public API Handle Movement---
+        
+        public Ball MarkHolding()
+        {
+            if (targetBottle == null)
+                return this;
+            AddState(BallState.MarkHolding);
+            return this;
+        }
+
+        private void PositionBySpeed<T>(Transform target, Vector3 startValue, Vector3 endValue, T listener, Action<T> onCompleted, Ease ease = Ease.Default) where T : class
+        {
+            // var prevProgress = _movementTween.isAlive ? _movementTween.progress : 0;
+            // var speed = prevProgress > 0 ? GameManager.instance.ballSpeed * prevProgress : GameManager.instance.ballSpeed; 
+            var speed = GameManager.instance.ballSpeed; 
+            _movementTween.Stop();
+            _movementTween = Tween.PositionAtSpeed(target, startValue, endValue, speed, ease)
+                .OnComplete(listener, onCompleted);
+        }
+        
         public void MoveUp()
         {
-            switch (currentState)
+            if (HasState(BallState.Idle) || HasState(BallState.Down))
             {
-                case BallState.Up:
-                    if (targetBottle != null )
-                    {
-                        if (targetBottle == GameManager.instance.currentBottle)
-                        {
-                            Tween.StopAll(transform);
-                            Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
-                                .OnComplete(this, ball =>
-                                {
-                                    Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed);
-                                    currentState = BallState.Holding;
-                                    ResetBottle();
-                                });
-                            return;
-                        }
-                        Tween.StopAll(transform);
-                        Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
-                            .OnComplete(this, ball => ball.HandleUpCompleted());
-                        return;
-                    }
-                    
-                    return;
+                Debug.Log(this.name + "in exist state idle or down");
+                SetState(BallState.Up);
+                PositionBySpeed(transform, transform.position, currentBottle.GetUpPosPosition(), this, ball => ball.HandleUpCompleted());
                 
-                case BallState.Moving:
-                    Tween.StopAll(transform);
-                    Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
-                        .OnComplete(() =>
-                        {
-                            currentState = BallState.Holding;
-                            ResetBottle();
-                        });
-                    return;
-                
-                case BallState.Holding:
-                    return;
-                
-                case BallState.Idle:
-                case BallState.Down:
-                    if (targetBottle != null)
-                    {
-                        Tween.StopAll(transform);
-                        currentState = BallState.Up;
-                        Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
-                            .OnComplete(this, ball => ball.HandleUpCompleted());
-                        return;
-                    }
-                    
-                    Tween.StopAll(transform);
-                    currentState = BallState.Up;
-                    Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
-                        .OnComplete(this, ball => ball.HandleUpCompleted());
-                    
-                    return;
+                // if (targetBottle != null)
+                // {
+                //     SetState(BallState.Up);
+                //     
+                //     Tween.StopAll(transform);
+                //     Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                //         .OnComplete(this, ball => ball.HandleUpCompleted());
+                //     return;
+                // }
+                //     
+                // SetState(BallState.Up);
+                // // PositionBySpeed(transform, transform.position, currentBottle.GetUpPosPosition(), this, ball => ball.HandleUpCompleted());
+                //
+                // Tween.StopAll(transform);
+                // Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                //     .OnComplete(this, ball => ball.HandleUpCompleted());
+                return;
             }
+
+            if (HasState(BallState.Up))
+            {
+                return;
+            }
+            
+            if (HasState(BallState.Moving))
+            {
+                Debug.Log(this.name + "in exist state moving");
+                ResetBottle();
+                
+                PositionBySpeed(transform, transform.position, currentBottle.GetUpPosPosition(), this, ball =>
+                {
+                    ball.SetState(BallState.Holding);
+                    
+                });
+                
+                // Tween.StopAll(transform);
+                // Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                //     .OnComplete(() =>
+                //     {
+                //         SetState(BallState.Holding);
+                //         ResetBottle();
+                //     });
+            }
+            
+            // switch (currentState)
+            // {
+            //     case BallState.Up:
+            //         if (targetBottle != null )
+            //         {
+            //             Tween.StopAll(transform);
+            //             Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+            //                 .OnComplete(this, ball => ball.HandleUpCompleted());
+            //             return;
+            //         }
+            //         
+            //         return;
+            //     
+            //     case BallState.Moving:
+            //         Tween.StopAll(transform);
+            //         Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+            //             .OnComplete(() =>
+            //             {
+            //                 AddState(BallState.Holding);
+            //                 ResetBottle();
+            //             });
+            //         return;
+            //     
+            //     case BallState.Holding:
+            //         return;
+            //     
+            //     case BallState.Idle:
+            //     case BallState.Down:
+            //         if (targetBottle != null)
+            //         {
+            //             Tween.StopAll(transform);
+            //             currentState = BallState.Up;
+            //             Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+            //                 .OnComplete(this, ball => ball.HandleUpCompleted());
+            //             return;
+            //         }
+            //         
+            //         Tween.StopAll(transform);
+            //         currentState = BallState.Up;
+            //         Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+            //             .OnComplete(this, ball => ball.HandleUpCompleted());
+            //         
+            //         return;
+            // }
         }
     
         public void MoveDown()
         {
-            switch (currentState)
+            if (HasState(BallState.Up) || HasState(BallState.Holding))
             {
-                case BallState.Idle:
-                    return;
-                case BallState.Moving:
-                    return;
+                SetState(BallState.Down);
                 
-                case BallState.Up:
-                case BallState.Holding:
-                    if (targetBottle != null)
-                    {
-                        Tween.StopAll(transform);
-                        currentState = BallState.Down;
-                        Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
-                            .OnComplete(this, ball => ball.HandleDownCompleted());
-                        return;
-                    }
+                
+                if (targetBottle != null)
+                {
+                    SetState(BallState.Down);
+                    PositionBySpeed(transform, transform.position, targetBottle.GetSlotWorldPosition(index), this, ball => ball.HandleDownCompleted());
                     
-                    Tween.StopAll(transform);
-                    currentState = BallState.Down;
-                    Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
-                        .OnComplete(this, ball => ball.HandleDownCompleted());
+                    // Tween.StopAll(transform);
+                    // Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
+                    //     .OnComplete(this, ball => ball.HandleDownCompleted());
                     return;
-                
-                case BallState.Down:
-                    return;
+                }
+                    
+                SetState(BallState.Down);
+                PositionBySpeed(transform, transform.position, currentBottle.GetSlotWorldPosition(index), this, ball => ball.HandleDownCompleted());
+                // Tween.StopAll(transform);
+                // Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
+                //     .OnComplete(this, ball => ball.HandleDownCompleted());
             }
+            // switch (currentState)
+            // {
+            //     case BallState.Idle:
+            //         return;
+            //     case BallState.Moving:
+            //         return;
+            //     
+            //     case BallState.Up:
+            //     case BallState.Holding:
+            //         if (targetBottle != null)
+            //         {
+            //             SetState(BallState.Down);
+            //             Tween.StopAll(transform);
+            //             Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
+            //                 .OnComplete(this, ball => ball.HandleDownCompleted());
+            //             return;
+            //         }
+            //         
+            //         SetState(BallState.Down);
+            //         Tween.StopAll(transform);
+            //         Tween.PositionAtSpeed(transform, transform.position, currentBottle.GetSlotWorldPosition(index), GameManager.instance.ballSpeed)
+            //             .OnComplete(this, ball => ball.HandleDownCompleted());
+            //         return;
+            //     
+            //     case BallState.Down:
+            //         return;
+            // }
         }
 
         public void Moving()
         {
-            switch (currentState)
+            if (HasState(BallState.Holding) || HasState(BallState.Moving))
             {
-                case BallState.Idle:
-                    return;
+                // SetState(BallState.Moving);
+                // PositionBySpeed(transform, transform.position, targetBottle.GetUpPosPosition(), this, ball => ball.HandleMovingCompleted());
                 
-                case BallState.Up:
-                    Debug.Log("Moving case up");
-                    return;
+                if (!ApproximatePoint(transform.position, targetBottle.GetUpPosPosition()))
+                {
+                    SetState(BallState.Moving);
+                    PositionBySpeed(transform, transform.position, targetBottle.GetUpPosPosition(), this, ball => ball.HandleMovingCompleted());
+                }
+                else
+                {
+                    HandleMovingCompleted();
+                }
                 
-                case BallState.Holding:
-                case BallState.Moving:
-                    Tween.StopAll(transform);
-                    currentState = BallState.Moving;
-                    Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
-                        .OnComplete(this, ball => ball.HandleMovingCompleted());
-                    return;
-                
-                case BallState.Down:
-                    return;
+                // Tween.StopAll(transform);
+                // Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+                //     .OnComplete(this, ball => ball.HandleMovingCompleted());
             }
+            
+            // switch (currentState)
+            // {
+            //     case BallState.Idle:
+            //         return;
+            //     
+            //     case BallState.Up:
+            //         Debug.Log("Moving case up");
+            //         return;
+            //     
+            //     case BallState.Holding:
+            //     case BallState.Moving:
+            //         Tween.StopAll(transform);
+            //         AddState(BallState.Moving);
+            //         Tween.PositionAtSpeed(transform, transform.position, targetBottle.GetUpPosPosition(), GameManager.instance.ballSpeed)
+            //             .OnComplete(this, ball => ball.HandleMovingCompleted());
+            //         return;
+            //     
+            //     case BallState.Down:
+            //         return;
+            // }
         }
         
         public void ChangeBottle(Bottle fromBottle, Bottle target, float delay, int index)
@@ -254,21 +371,57 @@ namespace DefaultNamespace
             this.targetBottle = target;
             this.index = index;
             
-            switch (currentState)
+            if(HasState(BallState.MarkHolding))
+                RemoveState(BallState.MarkHolding);
+            
+            if (HasState(BallState.Down) || HasState(BallState.Idle))
             {
-                case BallState.Idle:
-                case BallState.Down:
-                    MoveUp();
-                    break;
-                
-                case BallState.Up:
-                    break;
-                
-                case BallState.Holding:
-                case BallState.Moving:
-                    Moving();
-                    break;
+                Tween.Delay(delay).OnComplete(this, ball => MoveUp());
+                // MoveUp();
+                return;
             }
+            
+            if (HasState(BallState.Holding) || HasState(BallState.Moving))
+            {
+                Moving();
+                return;
+            }
+            
+            // if (HasState(BallState.Up))
+            // {
+            //     MoveUp();
+            //     return;
+            // }
+            
+            // switch (currentState)
+            // {
+            //     case BallState.Idle:
+            //     case BallState.Down:
+            //         MoveUp();
+            //         break;
+            //     
+            //     case BallState.Up:
+            //         break;
+            //     
+            //     case BallState.Holding:
+            //     case BallState.Moving:
+            //         Moving();
+            //         break;
+            // }
         }
+        
+        #endregion
+        
+        #region ---Helper Methods---
+
+        private bool ApproximatePoint(Vector3 a, Vector3 b)
+        {
+            return ApproximateFloat(a.x, b.x) && ApproximateFloat(a.y, b.y) && ApproximateFloat(a.z, b.z);
+        }
+        
+        private bool ApproximateFloat(float a, float b, float tolerance = 1E-06f) => Mathf.Abs(a - b) <= tolerance;
+        
+        #endregion
+
     }
 }
