@@ -5,6 +5,7 @@ using System.Net.NetworkInformation;
 using Core.Definition;
 using DefaultNamespace;
 using PrimeTween;
+using TMPro;
 using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
@@ -38,8 +39,9 @@ namespace Core.Manager
         [Header("Ball")]
         public GameObject Prf_Ball;
         public float ballSpeed = 10f;
-
-        [Header("Win Condition")] public bool isWin = false;
+        
+        public TMP_Text  winText;
+        
         public static GameManager instance;
 
         private void Awake()
@@ -56,7 +58,23 @@ namespace Core.Manager
 
         private void Start()
         {
+            FitScreen();
+            winText.enabled = false;
             InitBottle(5);
+        }
+        
+        private void FitScreen()
+        {
+            Debug.Log("Fit screen");
+            //Only fit when current aspect less than default aspect
+            Camera cam = Camera.main!;
+            const float defaultAspect = 9f / 16f;
+            float currentAspect = cam.aspect;
+
+            if (currentAspect > defaultAspect)
+                return;
+    
+            cam.orthographicSize *= defaultAspect / currentAspect;
         }
 
         public List<SwitchBallCommand> CheckSwitchBall(int bottleIndex1, int bottleIndex2)
@@ -121,10 +139,26 @@ namespace Core.Manager
 
         private void InitBottle(int numBottle)
         {
+            float yPos = -2f;
+            float zPos = 0f;
+
+            float padding = 0.5f;
+            
+            Vector3 leftEdge = Camera.main.ViewportToWorldPoint(new Vector3(0f, 0.5f, Camera.main.nearClipPlane));
+            Vector3 rightEdge = Camera.main.ViewportToWorldPoint(new Vector3(1f, 0.5f, Camera.main.nearClipPlane));
+            leftEdge.z = 0f;
+            rightEdge.z = 0f;
+            
+            float totalWidth = rightEdge.x - leftEdge.x - 2 * padding;
+            float step = totalWidth / (numBottle - 1);
+            
             //Create all bottle
             for (var i = 0; i < numBottle; i++)
             {
-                var bottleGameObject = Instantiate(Prf_Bottle, PosInitBottle + i * new Vector3(1.5f, 0, 0), quaternion.identity);
+                float xPos = leftEdge.x + padding + step * i;
+                Vector3 spawnPos = new Vector3(xPos, yPos, zPos);
+                
+                var bottleGameObject = Instantiate(Prf_Bottle, spawnPos, quaternion.identity);
                 var bottle = bottleGameObject.GetComponent<Bottle>();
                 
                 bottle.name = bottle.name+i.ToString();
@@ -137,8 +171,8 @@ namespace Core.Manager
             var bottleHasBall = numBottle - 2;
             
             //Init and shuffle ball
-            // var balls = BallShuffle(InitBall(bottleHasBall * 4));
-            var balls = InitBall(bottleHasBall * 4);
+            var balls = BallShuffle(InitBall(bottleHasBall * 4));
+            // var balls = InitBall(bottleHasBall * 4);
 
             //Add ball to bottle
             var bottleIndex = 0;
@@ -179,6 +213,7 @@ namespace Core.Manager
 
                     var ball = ballInstantiate.GetComponent<Ball>();
                     ball.name = ball.name+bT.ToString()+i.ToString();
+                    ball.textIndex.text = i.ToString();
                     ball.SetType(bT);
                     ball.SetColor(bT);
                     ball.currentState = BallState.Idle;
@@ -238,41 +273,45 @@ namespace Core.Manager
                 Ball b = bottle1.PopBall();
                 int index = bottle2.AddBallReturnPos(b);
                 
-                b.ChangeBottle(bottle1, bottle2, 0.7f - (i * 0.2f), index);
-                // b.ChangeBottle(bottle1, bottle2, 0.4f - (i * 0.1f), index);
+                //b.ChangeBottle(bottle1, bottle2, 0.7f - (i * 0.2f), index);
+                b.ChangeBottle(bottle1, bottle2, 0.4f - (i * 0.1f), index);
+                
+                if (GameManager.instance.CheckWinCondition())
+                {
+                    winText.enabled = true;
+                }
             }
         }
         
         public void OnClickBottle(int bottleIndex)
         {
-            // bool bottleFull = false;
-            //
-            // if (bottles[bottleIndex].balls.Count == 4)
-            // {
-            //     var ballSample = bottles[bottleIndex].balls[0];
-            //     if (ballSample is not null)
-            //     {
-            //         bottleFull = true;
-            //         for (int i = 1; i < bottles[bottleIndex].balls.Count ; i++)
-            //         {
-            //             if (bottles[bottleIndex].balls[i].ballType != ballSample.ballType)
-            //             {
-            //                 bottleFull = false;
-            //                 break;
-            //             }
-            //         }
-            //         
-            //     }
-            // }
-            //
-            // if (bottleFull)
-            // {
-            //     Debug.Log("Bottle full-------------------------");
-            //     return;
-            // }
+            bool bottleSameType = false;
+            
+            if (bottles[bottleIndex].balls.Count == 4)
+            {
+                var ballSample = bottles[bottleIndex].balls[0];
+                if (ballSample is not null)
+                {
+                    bottleSameType = true;
+                    for (int i = 1; i < bottles[bottleIndex].balls.Count ; i++)
+                    {
+                        if (bottles[bottleIndex].balls[i].ballType != ballSample.ballType)
+                        {
+                            bottleSameType = false;
+                            break;
+                        }
+                    }
+                    
+                }
+            }
+            
+            if (bottleSameType)
+            {
+                Debug.Log("Bottle full-------------------------");
+                return;
+            }
             
             //If choose first bottle
-            
             if (selectedBottleIndex == -1)
             {
                 if(bottles[bottleIndex].balls.Count == 0)
@@ -321,35 +360,26 @@ namespace Core.Manager
             }
         }
         
-        // private void CheckWinCondition()
-        // {
-        //     bool isWin;
-        //     
-        //     foreach (var bottle in bottles)
-        //     {
-        //         if (bottle.balls.Count == 0)
-        //         {
-        //             continue;
-        //         }
-        //
-        //         if (bottle.balls.Count < 4)
-        //         {
-        //             break;
-        //         }
-        //
-        //         bool isSameType = true;
-        //         Ball ballSample = bottle.balls[0];
-        //         foreach (var ball in bottle.balls)
-        //         {
-        //             if (ball.ballType == ballSample.ballType)
-        //             {
-        //                 isSameType = false;
-        //             }
-        //         }
-        //     }
-        //     
-        //     return isWin;
-        // }
+        public bool CheckWinCondition()
+        {
+            for (int i = 0; i < bottles.Count; i++)
+            {
+                if (bottles[i].balls.Count != 0 && bottles[i].balls.Count != 4)
+                {
+                    return false;
+                }
+                
+                foreach (var ball in bottles[i].balls)
+                {
+                    if(ball.ballType != bottles[i].balls[0].ballType)
+                    {
+                        return false;
+                    }
+                }
+            }
+            
+            return true;
+        }
 
         public void ResetScene()
         {

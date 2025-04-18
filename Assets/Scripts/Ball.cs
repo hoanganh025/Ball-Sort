@@ -18,7 +18,7 @@ namespace DefaultNamespace
         Up = 1 << 1,
         Holding = 1 << 2,
         Down = 1 << 3,
-        Moving = 1 << 4,
+        Transferring = 1 << 4,
         /// <summary>Force cache this value</summary>
         MarkHolding = 1 << 5
     }
@@ -34,10 +34,11 @@ namespace DefaultNamespace
 
         private Bottle preBottle;
 
+        public Bottle currentBottle;
+
         [SerializeField]
         private Bottle _targetBottle;
-        
-        public Bottle currentBottle;
+
         public Bottle targetBottle
         {
             get => _targetBottle;
@@ -97,8 +98,16 @@ namespace DefaultNamespace
 
         private void ResetBottle()
         {
-            currentBottle = targetBottle;
-            targetBottle = null;
+            if (targetBottle != null)
+            {
+                currentBottle = targetBottle;
+                targetBottle = null;
+            }
+        }
+
+        private void ballSpeed()
+        {
+            
         }
 
         #region ---Movement Complete Listener---
@@ -108,7 +117,7 @@ namespace DefaultNamespace
             if (targetBottle != null)
             {
                 SetState(BallState.Holding);
-                Moving();
+                Transferring();
                 return;
             }
 
@@ -158,23 +167,22 @@ namespace DefaultNamespace
             return this;
         }
 
-        private void PositionBySpeed<T>(Transform target, Vector3 startValue, Vector3 endValue, T listener, Action<T> onCompleted, Ease ease = Ease.Default) where T : class
+        private void PositionBySpeed<T>(Transform target, Vector3 startValue, Vector3 endValue, T listener, Action<T> onCompleted, Ease ease = Ease.Default, float delay = 0) where T : class
         {
             // var prevProgress = _movementTween.isAlive ? _movementTween.progress : 0;
             // var speed = prevProgress > 0 ? GameManager.instance.ballSpeed * prevProgress : GameManager.instance.ballSpeed; 
             var speed = GameManager.instance.ballSpeed; 
             _movementTween.Stop();
-            _movementTween = Tween.PositionAtSpeed(target, startValue, endValue, speed, ease)
+            _movementTween = Tween.PositionAtSpeed(target, startValue, endValue, speed, ease, startDelay: delay)
                 .OnComplete(listener, onCompleted);
         }
         
-        public void MoveUp()
+        public void MoveUp(float delay = 0)
         {
             if (HasState(BallState.Idle) || HasState(BallState.Down))
             {
-                Debug.Log(this.name + "in exist state idle or down");
                 SetState(BallState.Up);
-                PositionBySpeed(transform, transform.position, currentBottle.GetUpPosPosition(), this, ball => ball.HandleUpCompleted());
+                PositionBySpeed(transform, transform.position, currentBottle.GetUpPosPosition(), this, ball => ball.HandleUpCompleted(), delay: delay);
                 
                 // if (targetBottle != null)
                 // {
@@ -197,18 +205,17 @@ namespace DefaultNamespace
 
             if (HasState(BallState.Up))
             {
+                Debug.Log("Ball state up");
                 return;
             }
             
-            if (HasState(BallState.Moving))
+            if (HasState(BallState.Transferring))
             {
-                Debug.Log(this.name + "in exist state moving");
                 ResetBottle();
                 
                 PositionBySpeed(transform, transform.position, currentBottle.GetUpPosPosition(), this, ball =>
                 {
                     ball.SetState(BallState.Holding);
-                    
                 });
                 
                 // Tween.StopAll(transform);
@@ -268,10 +275,14 @@ namespace DefaultNamespace
     
         public void MoveDown()
         {
+            if (HasState(BallState.Up) && HasState(BallState.MarkHolding) && targetBottle)
+            {
+                return;
+            }
+            
             if (HasState(BallState.Up) || HasState(BallState.Holding))
             {
                 SetState(BallState.Down);
-                
                 
                 if (targetBottle != null)
                 {
@@ -319,17 +330,17 @@ namespace DefaultNamespace
             // }
         }
 
-        public void Moving()
+        private void Transferring(float delay = 0f)
         {
-            if (HasState(BallState.Holding) || HasState(BallState.Moving))
+            if (HasState(BallState.Holding) || HasState(BallState.Transferring))
             {
                 // SetState(BallState.Moving);
                 // PositionBySpeed(transform, transform.position, targetBottle.GetUpPosPosition(), this, ball => ball.HandleMovingCompleted());
                 
                 if (!ApproximatePoint(transform.position, targetBottle.GetUpPosPosition()))
                 {
-                    SetState(BallState.Moving);
-                    PositionBySpeed(transform, transform.position, targetBottle.GetUpPosPosition(), this, ball => ball.HandleMovingCompleted());
+                    SetState(BallState.Transferring);
+                    PositionBySpeed(transform, transform.position, targetBottle.GetUpPosPosition(), this, ball => ball.HandleMovingCompleted(), delay: delay);
                 }
                 else
                 {
@@ -363,27 +374,33 @@ namespace DefaultNamespace
             // }
         }
         
-        public void ChangeBottle(Bottle fromBottle, Bottle target, float delay, int index)
+        public void ChangeBottle(Bottle fromBottle, Bottle toBottle, float delay, int index)
         {
-            textIndex.text = index.ToString();
-            
             this.currentBottle = fromBottle;
-            this.targetBottle = target;
+            this.targetBottle = toBottle;
             this.index = index;
+            
+            
             
             if(HasState(BallState.MarkHolding))
                 RemoveState(BallState.MarkHolding);
             
             if (HasState(BallState.Down) || HasState(BallState.Idle))
             {
-                Tween.Delay(delay).OnComplete(this, ball => MoveUp());
+                MoveUp(delay);
                 // MoveUp();
                 return;
             }
-            
-            if (HasState(BallState.Holding) || HasState(BallState.Moving))
+
+            if (HasState(BallState.Up) && ApproximateFloat(toBottle.transform.position.x, transform.position.x)) 
             {
-                Moving();
+                MoveDown();
+                return;
+            }
+            
+            if (HasState(BallState.Holding) || HasState(BallState.Transferring))
+            {
+                Transferring();
                 return;
             }
             
